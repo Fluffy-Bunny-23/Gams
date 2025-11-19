@@ -491,6 +491,43 @@ class GamsManager:
             print("✓ No orphaned files found.")
             input("\nPress Enter to continue...")
 
+    def assign_game_image(self, game_name: str, image_source: Optional[str] = None) -> bool:
+        """Assign an image to a specific game (default Gams logo or custom URL)."""
+        self.clear_screen()
+        print(f"\n🖼️  Assigning image to: {game_name}")
+        
+        # Convert game name to filename
+        img_filename = f"{game_name.lower().replace(' ', '')}.png"
+        img_path = self.img_dir / img_filename
+        
+        try:
+            if image_source:
+                # Custom URL provided
+                print(f"📥 Downloading image from: {image_source}")
+                response = requests.get(image_source, timeout=15)
+                response.raise_for_status()
+                
+                with open(img_path, 'wb') as f:
+                    f.write(response.content)
+                print(f"✓ Downloaded and assigned custom thumbnail: {img_path}")
+            else:
+                # Use default Gams logo
+                if not self.default_image.exists():
+                    print(f"✗ Default Gams logo not found at {self.default_image}")
+                    input("\nPress Enter to continue...")
+                    return False
+                
+                shutil.copy2(self.default_image, img_path)
+                print(f"✓ Assigned default thumbnail: {img_path}")
+            
+            input("\nPress Enter to continue...")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Error assigning image: {e}")
+            input("\nPress Enter to continue...")
+            return False
+
     def backup_config(self):
         """Create a backup of Gams.html."""
         self.clear_screen()
@@ -519,10 +556,11 @@ class GamsManager:
             print("3. Find Duplicates")
             print("4. Clean Orphaned Files")
             print("5. List All Games")
-            print("6. Backup Gams.html")
-            print("7. Exit")
+            print("6. Assign Default Image")
+            print("7. Backup Gams.html")
+            print("8. Exit")
             
-            choice = input("\nSelect option (1-7): ").strip()
+            choice = input("\nSelect option (1-8): ").strip()
             
             if choice == '1':
                 self.interactive_add_menu()
@@ -535,8 +573,10 @@ class GamsManager:
             elif choice == '5':
                 self.list_installed_games()
             elif choice == '6':
-                self.backup_config()
+                self.interactive_assign_image_menu()
             elif choice == '7':
+                self.backup_config()
+            elif choice == '8':
                 self.clear_screen()
                 print("👋 Goodbye!")
                 break
@@ -599,6 +639,60 @@ class GamsManager:
                 if confirm.lower() == 'yes':
                     self.delete_game(game_to_delete)
                     input("\nPress Enter to continue...")
+            else:
+                print("❌ Invalid selection")
+        except ValueError:
+            print("❌ Invalid input")
+
+    def interactive_assign_image_menu(self):
+        """Sub-menu for assigning default image to games."""
+        self.clear_screen()
+        print("\n🖼️  Assign Image Menu")
+        entries = self.parse_gams_list()
+        games = [e['name'] for e in entries if 'name' in e]
+        
+        print(f"Found {len(games)} installed games.")
+        search = input("Enter game name to search (or ENTER to list all): ").strip().lower()
+        
+        matches = [g for g in games if search in g.lower()]
+        
+        if not matches:
+            print("No games found.")
+            input("\nPress Enter to continue...")
+            return
+            
+        print("\nSelect game to assign image:")
+        for i, game in enumerate(matches[:20], 1):
+            print(f"{i}. {game}")
+        if len(matches) > 20:
+            print(f"...and {len(matches)-20} more")
+            
+        try:
+            sel = input("\nSelect number (0 to cancel): ").strip()
+            if not sel or sel == '0':
+                return
+                
+            idx = int(sel) - 1
+            if 0 <= idx < len(matches):
+                game_to_update = matches[idx]
+                
+                # Ask for image source
+                print("\nImage source options:")
+                print("1. Use default Gams logo")
+                print("2. Provide custom image URL")
+                
+                img_choice = input("Select option (1-2): ").strip()
+                
+                if img_choice == '1':
+                    self.assign_game_image(game_to_update)
+                elif img_choice == '2':
+                    url = input("Enter image URL: ").strip()
+                    if url:
+                        self.assign_game_image(game_to_update, url)
+                    else:
+                        print("❌ No URL provided")
+                else:
+                    print("❌ Invalid option")
             else:
                 print("❌ Invalid selection")
         except ValueError:
@@ -698,10 +792,14 @@ def main():
             manager.find_orphaned_files()
         elif cmd == 'list':
             manager.list_installed_games()
+        elif cmd == 'assign-image' and len(sys.argv) >= 3:
+            manager.assign_game_image(sys.argv[2])
+        elif cmd == 'assign-custom-image' and len(sys.argv) >= 4:
+            manager.assign_game_image(sys.argv[2], sys.argv[3])
         elif cmd == 'backup':
             manager.backup_config()
         else:
-            print("Usage: manage_gams.py [add|delete|duplicates|orphans|list|backup] [args...]")
+            print("Usage: manage_gams.py [add|delete|duplicates|orphans|list|assign-image|assign-custom-image|backup] [args...]")
     else:
         manager.interactive_menu()
 
