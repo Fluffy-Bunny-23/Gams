@@ -28,6 +28,23 @@ The offline games repository offers the following features:
 - Customizable title and favicon settings.
 - Dark and light mode options.
 
+### Management Tool
+
+We include a powerful Python script to manage your game collection.
+
+**Usage:**
+```bash
+python manage_gams.py
+```
+This tool allows you to:
+*   Add new games from the UGS database
+*   Delete games cleanly (files + list entry)
+*   Find and remove duplicates
+*   Clean up orphaned files
+*   Backup your configuration
+
+See `MANAGE_GAMS_README.md` for full details.
+
 ### Fun Game List
 
 Here are some of the most fun games available in this repository:
