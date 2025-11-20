@@ -210,10 +210,12 @@ class GamsManager:
     
     def add_game(self, game_id: str, section: str, use_custom_image: bool = False) -> bool:
         """Add a complete game to Gams."""
-        print(f"\n🎮 Adding game: {game_id}")
-        
-        # Get readable name
         game_name = self.get_game_name(game_id)
+        return self.add_game_with_name(game_id, game_name, section, use_custom_image)
+    
+    def add_game_with_name(self, game_id: str, game_name: str, section: str, use_custom_image: bool = False) -> bool:
+        """Add a complete game to Gams with custom name."""
+        print(f"\n🎮 Adding game: {game_id}")
         print(f"📝 Game name: {game_name}")
         
         # Download game
@@ -758,8 +760,13 @@ class GamsManager:
         except ValueError: print("❌ Invalid input")
 
     def process_game_selection(self, game_id: str):
-        game_name = self.get_game_name(game_id)
-        print(f"\n🎮 Selected: {game_name}")
+        default_name = self.get_game_name(game_id)
+        print(f"\n🎮 Selected: {default_name}")
+        
+        # Ask for custom name
+        custom_name = input(f"Enter game name (press ENTER for '{default_name}'): ").strip()
+        game_name = custom_name if custom_name else default_name
+        
         print("📂 Available sections:")
         for i, section in enumerate(self.sections, 1):
             print(f"{i}. {section}")
@@ -769,7 +776,7 @@ class GamsManager:
             if 0 <= idx < len(self.sections):
                 section = self.sections[idx]
                 custom_img = input("Use custom image? (y/N): ").strip().lower()
-                self.add_game(game_id, section, custom_img.startswith('y'))
+                self.add_game_with_name(game_id, game_name, section, custom_img.startswith('y'))
                 input("\nPress Enter to continue...")
             else:
                 print("❌ Invalid section")
