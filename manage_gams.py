@@ -250,6 +250,55 @@ class GamsManager:
             print(f"❌ Failed to add '{game_name}'")
             return False
 
+    def add_game_from_url(self, url: str, game_name: str, section: str, use_custom_image: bool = False) -> bool:
+        """Add a game from a direct HTML URL to Gams."""
+        print(f"\n🌐 Adding game from URL: {url}")
+        print(f"📝 Game name: {game_name}")
+        
+        try:
+            # Download game from URL
+            print("⬇️  Downloading game from URL...")
+            response = requests.get(url, timeout=15)
+            response.raise_for_status()
+            content = response.text
+            
+            # Generate filename from game name
+            filename = f"{game_name.lower().replace(' ', '')}.html"
+            
+            # Save game file
+            print("💾 Saving game file...")
+            game_path = self.games_dir / filename
+            self.games_dir.mkdir(parents=True, exist_ok=True)
+            
+            with open(game_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"✓ Saved to: {game_path}")
+            
+            # Create custom path for gamsList
+            custom_path = f"g/g/{game_path.name}"
+            
+            # Create thumbnail
+            if not use_custom_image:
+                print("🖼️  Creating thumbnail...")
+                self.create_game_image(game_name)
+            else:
+                print("⏭️  Skipping thumbnail (will use custom)")
+            
+            # Add to gamsList
+            print("📋 Adding to game list...")
+            success = self.add_game_to_gams_list(game_name, section, custom_path)
+            
+            if success:
+                print(f"🎉 Successfully added '{game_name}' from URL to Gams!")
+                return True
+            else:
+                print(f"❌ Failed to add '{game_name}'")
+                return False
+                
+        except Exception as e:
+            print(f"✗ Error downloading from URL: {e}")
+            return False
+
     # --- Deletion Functionality ---
 
     def parse_gams_list(self) -> List[Dict]:
@@ -530,6 +579,131 @@ class GamsManager:
             input("\nPress Enter to continue...")
             return False
 
+    def rename_game(self, old_name: str, new_name: str) -> bool:
+        """Rename a game in Gams.html and update files."""
+        print(f"\n📝 Renaming game: '{old_name}' -> '{new_name}'")
+        
+        try:
+            with open(self.gams_html, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Check if old game exists
+            if f'name: "{old_name}"' not in content:
+                print(f"✗ Game '{old_name}' not found in Gams.html")
+                return False
+            
+            # Check if new name already exists
+            if f'name: "{new_name}"' in content:
+                print(f"✗ Game '{new_name}' already exists")
+                return False
+            
+            # Update game name in Gams.html
+            new_content = content.replace(f'name: "{old_name}"', f'name: "{new_name}"')
+            
+            with open(self.gams_html, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            
+            print("✓ Updated game name in Gams.html")
+            
+            # Rename thumbnail if it exists
+            old_img_name = f"{old_name.lower().replace(' ', '')}.png"
+            new_img_name = f"{new_name.lower().replace(' ', '')}.png"
+            old_img_path = self.img_dir / old_img_name
+            new_img_path = self.img_dir / new_img_name
+            
+            if old_img_path.exists():
+                shutil.move(old_img_path, new_img_path)
+                print(f"✓ Renamed thumbnail: {old_img_name} -> {new_img_name}")
+            
+            # Find and rename the game file
+            entries = self.parse_gams_list()
+            for entry in entries:
+                if entry.get('name') == new_name and 'href' in entry:
+                    href = entry['href']
+                    if href.startswith('g/g/'):
+                        old_file_path = self.base_dir / href
+                        if old_file_path.exists():
+                            # Generate new filename
+                            new_filename = f"{new_name.lower().replace(' ', '')}.html"
+                            new_file_path = self.games_dir / new_filename
+                            
+                            # Move the file
+                            shutil.move(old_file_path, new_file_path)
+                            print(f"✓ Renamed game file: {old_file_path.name} -> {new_filename}")
+                            
+                            # Update the href in Gams.html
+                            new_href = f"g/g/{new_filename}"
+                            updated_content = new_content.replace(href, new_href)
+                            
+                            with open(self.gams_html, 'w', encoding='utf-8') as f:
+                                f.write(updated_content)
+                            
+                            print(f"✓ Updated file path in Gams.html")
+                            break
+            
+            print(f"🎉 Successfully renamed '{old_name}' to '{new_name}'")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Error renaming game: {e}")
+            return False
+
+    def move_game(self, game_name: str, new_section: str) -> bool:
+        """Move a game to a different section in Gams.html."""
+        print(f"\n📂 Moving game: '{game_name}' to '{new_section}' section")
+        
+        try:
+            with open(self.gams_html, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Find the game entry
+            game_line_idx = -1
+            game_entry = ""
+            
+            for i, line in enumerate(lines):
+                if f'name: "{game_name}"' in line:
+                    game_line_idx = i
+                    game_entry = line.strip()
+                    break
+            
+            if game_line_idx == -1:
+                print(f"✗ Game '{game_name}' not found in Gams.html")
+                return False
+            
+            # Remove the game from its current location
+            new_lines = lines[:game_line_idx] + lines[game_line_idx + 1:]
+            
+            # Find the target section
+            target_section_line = self.find_section_in_gams_list(new_section)
+            if target_section_line == -1:
+                print(f"✗ Section '{new_section}' not found")
+                return False
+            
+            # Find insertion point in target section
+            insert_line = target_section_line
+            for i in range(target_section_line, len(new_lines)):
+                line = new_lines[i].strip()
+                if line.startswith('{title:') and i > target_section_line:
+                    break
+                if line == '];':
+                    break
+                insert_line = i + 1
+            
+            # Insert the game in the new section
+            new_lines.insert(insert_line, game_entry + '\n')
+            
+            # Write back to file
+            with open(self.gams_html, 'w', encoding='utf-8') as f:
+                f.writelines(new_lines)
+            
+            print(f"✓ Moved '{game_name}' to '{new_section}' section")
+            print(f"🎉 Successfully moved game!")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Error moving game: {e}")
+            return False
+
     def backup_config(self):
         """Create a backup of Gams.html."""
         self.clear_screen()
@@ -555,30 +729,36 @@ class GamsManager:
             print("=" * 50)
             print("1. Add New Game")
             print("2. Delete Game")
-            print("3. Find Duplicates")
-            print("4. Clean Orphaned Files")
-            print("5. List All Games")
-            print("6. Assign Default Image")
-            print("7. Backup Gams.html")
-            print("8. Exit")
+            print("3. Rename Game")
+            print("4. Move Game")
+            print("5. Find Duplicates")
+            print("6. Clean Orphaned Files")
+            print("7. List All Games")
+            print("8. Assign Default Image")
+            print("9. Backup Gams.html")
+            print("10. Exit")
             
-            choice = input("\nSelect option (1-8): ").strip()
+            choice = input("\nSelect option (1-10): ").strip()
             
             if choice == '1':
                 self.interactive_add_menu()
             elif choice == '2':
                 self.interactive_delete_menu()
             elif choice == '3':
-                self.find_duplicates()
+                self.interactive_rename_menu()
             elif choice == '4':
-                self.find_orphaned_files()
+                self.interactive_move_menu()
             elif choice == '5':
-                self.list_installed_games()
+                self.find_duplicates()
             elif choice == '6':
-                self.interactive_assign_image_menu()
+                self.find_orphaned_files()
             elif choice == '7':
-                self.backup_config()
+                self.list_installed_games()
             elif choice == '8':
+                self.interactive_assign_image_menu()
+            elif choice == '9':
+                self.backup_config()
+            elif choice == '10':
                 self.clear_screen()
                 print("👋 Goodbye!")
                 break
@@ -592,15 +772,18 @@ class GamsManager:
         print("\n➕ Add Game Menu")
         print("1. Search for a game")
         print("2. Browse by letter")
-        print("3. Back to Main Menu")
+        print("3. Add from URL")
+        print("4. Back to Main Menu")
         
-        choice = input("\nSelect option (1-3): ").strip()
+        choice = input("\nSelect option (1-4): ").strip()
         
         if choice == '1':
             self.search_and_add()
         elif choice == '2':
             self.browse_by_letter()
         elif choice == '3':
+            self.add_from_url_interactive()
+        elif choice == '4':
             return
         else:
             print("❌ Invalid option")
@@ -782,6 +965,149 @@ class GamsManager:
                 print("❌ Invalid section")
         except ValueError: print("❌ Invalid input")
 
+    def add_from_url_interactive(self):
+        """Interactive method to add game from URL."""
+        self.clear_screen()
+        print("\n🌐 Add Game from URL")
+        
+        url = input("Enter HTML game URL: ").strip()
+        if not url:
+            print("❌ No URL provided")
+            input("\nPress Enter to continue...")
+            return
+        
+        game_name = input("Enter game name: ").strip()
+        if not game_name:
+            print("❌ No game name provided")
+            input("\nPress Enter to continue...")
+            return
+        
+        print("📂 Available sections:")
+        for i, section in enumerate(self.sections, 1):
+            print(f"{i}. {section}")
+        
+        try:
+            section_choice = input(f"Select section (1-{len(self.sections)}): ").strip()
+            idx = int(section_choice) - 1
+            if 0 <= idx < len(self.sections):
+                section = self.sections[idx]
+                custom_img = input("Use custom image? (y/N): ").strip().lower()
+                success = self.add_game_from_url(url, game_name, section, custom_img.startswith('y'))
+                input("\nPress Enter to continue...")
+            else:
+                print("❌ Invalid section")
+                input("\nPress Enter to continue...")
+        except ValueError:
+            print("❌ Invalid input")
+            input("\nPress Enter to continue...")
+
+    def interactive_rename_menu(self):
+        """Sub-menu for renaming games."""
+        self.clear_screen()
+        print("\n📝 Rename Game Menu")
+        entries = self.parse_gams_list()
+        games = [e['name'] for e in entries if 'name' in e]
+        
+        print(f"Found {len(games)} installed games.")
+        search = input("Enter game name to search (or ENTER to list all): ").strip().lower()
+        
+        matches = [g for g in games if search in g.lower()]
+        
+        if not matches:
+            print("No games found.")
+            input("\nPress Enter to continue...")
+            return
+            
+        print("\nSelect game to rename:")
+        for i, game in enumerate(matches[:20], 1):
+            print(f"{i}. {game}")
+        if len(matches) > 20:
+            print(f"...and {len(matches)-20} more")
+            
+        try:
+            sel = input("\nSelect number (0 to cancel): ").strip()
+            if not sel or sel == '0':
+                return
+                
+            idx = int(sel) - 1
+            if 0 <= idx < len(matches):
+                old_name = matches[idx]
+                print(f"\nCurrent name: {old_name}")
+                new_name = input("Enter new name: ").strip()
+                
+                if not new_name:
+                    print("❌ No new name provided")
+                    input("\nPress Enter to continue...")
+                    return
+                
+                if new_name == old_name:
+                    print("❌ New name is the same as current name")
+                    input("\nPress Enter to continue...")
+                    return
+                
+                confirm = input(f"Are you sure you want to rename '{old_name}' to '{new_name}'? (yes/no): ")
+                if confirm.lower() == 'yes':
+                    success = self.rename_game(old_name, new_name)
+                    input("\nPress Enter to continue...")
+            else:
+                print("❌ Invalid selection")
+        except ValueError:
+            print("❌ Invalid input")
+
+    def interactive_move_menu(self):
+        """Sub-menu for moving games between sections."""
+        self.clear_screen()
+        print("\n📂 Move Game Menu")
+        entries = self.parse_gams_list()
+        games = [e['name'] for e in entries if 'name' in e]
+        
+        print(f"Found {len(games)} installed games.")
+        search = input("Enter game name to search (or ENTER to list all): ").strip().lower()
+        
+        matches = [g for g in games if search in g.lower()]
+        
+        if not matches:
+            print("No games found.")
+            input("\nPress Enter to continue...")
+            return
+            
+        print("\nSelect game to move:")
+        for i, game in enumerate(matches[:20], 1):
+            print(f"{i}. {game}")
+        if len(matches) > 20:
+            print(f"...and {len(matches)-20} more")
+            
+        try:
+            sel = input("\nSelect number (0 to cancel): ").strip()
+            if not sel or sel == '0':
+                return
+                
+            idx = int(sel) - 1
+            if 0 <= idx < len(matches):
+                game_name = matches[idx]
+                print(f"\nSelected game: {game_name}")
+                
+                print("\nAvailable sections:")
+                for i, section in enumerate(self.sections, 1):
+                    print(f"{i}. {section}")
+                
+                section_choice = input(f"Select target section (1-{len(self.sections)}): ").strip()
+                idx = int(section_choice) - 1
+                
+                if 0 <= idx < len(self.sections):
+                    new_section = self.sections[idx]
+                    confirm = input(f"Move '{game_name}' to '{new_section}' section? (yes/no): ")
+                    if confirm.lower() == 'yes':
+                        success = self.move_game(game_name, new_section)
+                        input("\nPress Enter to continue...")
+                else:
+                    print("❌ Invalid section")
+                    input("\nPress Enter to continue...")
+            else:
+                print("❌ Invalid selection")
+        except ValueError:
+            print("❌ Invalid input")
+
 
 def main():
     manager = GamsManager()
@@ -803,10 +1129,26 @@ def main():
             manager.assign_game_image(sys.argv[2])
         elif cmd == 'assign-custom-image' and len(sys.argv) >= 4:
             manager.assign_game_image(sys.argv[2], sys.argv[3])
+        elif cmd == 'add-url' and len(sys.argv) >= 4:
+            url = sys.argv[2]
+            game_name = sys.argv[3]
+            section = sys.argv[4] if len(sys.argv) > 4 else "Custom"
+            manager.add_game_from_url(url, game_name, section)
+        elif cmd == 'rename' and len(sys.argv) >= 4:
+            old_name = sys.argv[2]
+            new_name = sys.argv[3]
+            manager.rename_game(old_name, new_name)
+        elif cmd == 'move' and len(sys.argv) >= 4:
+            game_name = sys.argv[2]
+            new_section = sys.argv[3]
+            manager.move_game(game_name, new_section)
         elif cmd == 'backup':
             manager.backup_config()
         else:
-            print("Usage: manage_gams.py [add|delete|duplicates|orphans|list|assign-image|assign-custom-image|backup] [args...]")
+            print("Usage: manage_gams.py [add|delete|rename|move|add-url|duplicates|orphans|list|assign-image|assign-custom-image|backup] [args...]")
+            print("  add-url <url> <name> [section]  - Add game from URL")
+            print("  rename <old_name> <new_name>    - Rename a game")
+            print("  move <name> <section>           - Move game to different section")
     else:
         manager.interactive_menu()
 
